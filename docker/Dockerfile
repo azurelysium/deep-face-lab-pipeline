@@ -4,6 +4,7 @@ FROM nvidia/cuda:10.0-cudnn7-devel-ubuntu18.04
 
 #
 # Install Miniconda in /opt/conda
+# https://hub.docker.com/r/kundajelab/cuda-anaconda-base/dockerfile
 #
 
 ENV PATH /opt/conda/bin:$PATH
@@ -35,5 +36,6 @@ COPY install.sh /app/install.sh
 RUN bash -l install.sh
 
 RUN apt-get update --fix-missing && \
-    apt-get install -y ffmpeg libsm6
+    apt-get install -y ffmpeg libsm6 unzip
 COPY env.sh /app/DeepFaceLab_Linux/scripts/env.sh
+COPY Merger.py /app/DeepFaceLab_Linux/DeepFaceLab/mainscripts/Merger.py

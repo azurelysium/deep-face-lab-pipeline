@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dummy
+spec:
+  containers:
+  - args:
+    - /bin/bash
+    image: ghcr.io/azurelysium/deepfacelab:latest
+    imagePullPolicy: Always
+    name: dummy
+    resources: {}
+    stdin: true
+    stdinOnce: true
+    tty: true
+    volumeMounts:
+      - mountPath: "/workspace"
+        name: dummy-volume
+  volumes:
+    - name: dummy-volume
+      persistentVolumeClaim:
+        claimName: deepfacelab-workspace-pvc
