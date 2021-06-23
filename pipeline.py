@@ -2,10 +2,10 @@ from functools import partial
 
 import kfp
 from kfp import dsl
-from kfp.components import func_to_container_op
+from kfp.components import func_to_container_op, OutputPath
 
 
-
+## For custom operator
 dfl_op = partial(
     func_to_container_op,
     base_image="ghcr.io/azurelysium/deepfacelab:latest",
@@ -169,12 +169,14 @@ def merge_quick96_op(
 ## Component: 7. Make video output
 @dfl_op
 def make_video_output_op(
+    video_path: OutputPath("mp4"),
 ) -> None:
     run_commands(f"""
     source /opt/conda/etc/profile.d/conda.sh;
     conda activate deepfacelab;
     cd /app/DeepFaceLab_Linux/scripts/;
     bash 8_merged_to_mp4_lossless.sh
+    cp /workspace/result.mp4 {video_path}
     """)
 
 
@@ -191,12 +193,15 @@ def pipeline(
         workspace_pvc_name: str = "deepfacelab-workspace-pvc",
 ) -> None:
 
-    # Defining a pipeline
+    ## Defining a pipeline
 
     clear_workspace_task = clear_workspace_op()
 
+    # Pre-trained model and data are already prepared in docker image
+    """
     download_pretrained_model_task = download_pretrained_model_op().after(clear_workspace_task)
     download_pretrained_data_task = download_pretrained_data_op().after(clear_workspace_task)
+    """
     download_videos_task = download_videos_op(
         source_youtube_url,
         source_start_time,
@@ -214,9 +219,9 @@ def pipeline(
     extract_faces_from_target_task = extract_faces_from_target_op().after(extract_images_from_target_task).set_gpu_limit(1)
 
     train_quick96_task = train_quick96_op(train_timeout).after(
-        download_pretrained_data_task,
-        download_pretrained_model_task,
         extract_faces_from_source_task,
+        #download_pretrained_data_task,
+        #download_pretrained_model_task,
     ).set_gpu_limit(1)
 
     merge_quick96_task = merge_quick96_op().after(
@@ -225,23 +230,22 @@ def pipeline(
     ).set_gpu_limit(1)
     make_video_output_task = make_video_output_op().after(merge_quick96_task)
 
-
     # Attach volumes and disable caching
-    """
     vop = dsl.VolumeOp(
         name="volume_creation",
         resource_name=workspace_pvc_name,
         size="16Gi"
     )
-    """
 
     def op_transformer(op):
         if type(op) == kfp.dsl.ContainerOp:
             op.execution_options.caching_strategy.max_cache_staleness = "P0D"
-            """
             op.add_pvolumes({"/workspace": vop.volume})
+
+            # For manual pv creation
             """
             op.add_pvolumes({"/workspace": dsl.PipelineVolume(pvc=workspace_pvc_name)})
+            """
 
     pipeline_conf = kfp.dsl.get_pipeline_conf()
     pipeline_conf.add_op_transformer(op_transformer)

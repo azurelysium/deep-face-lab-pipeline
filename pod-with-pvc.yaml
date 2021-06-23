@@ -16,6 +16,11 @@ spec:
     volumeMounts:
       - mountPath: "/workspace"
         name: dummy-volume
+    resources:
+      limits:
+        nvidia.com/gpu: "1"
+      requests:
+        nvidia.com/gpu: "1"
   volumes:
     - name: dummy-volume
       persistentVolumeClaim:

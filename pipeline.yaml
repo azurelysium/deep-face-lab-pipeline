@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
   generateName: deepfacelab-pipeline-
-  annotations: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline_compilation_time: '2021-06-22T16:49:54.408242',
+  annotations: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline_compilation_time: '2021-06-23T08:47:03.886993',
     pipelines.kubeflow.org/pipeline_spec: '{"inputs": [{"default": "https://www.youtube.com/watch?v=hZNL2j_YJyM",
       "name": "source_youtube_url", "optional": true, "type": "String"}, {"default":
       "00:00:30.00", "name": "source_start_time", "optional": true, "type": "String"},
@@ -40,11 +40,11 @@ spec:
         _parsed_args = vars(_parser.parse_args())\n\n_outputs = clear_workspace_op(**_parsed_args)\n"
       image: ghcr.io/azurelysium/deepfacelab:latest
       volumeMounts:
-      - {mountPath: /workspace, name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3}
+      - {mountPath: /workspace, name: volume-creation}
       imagePullPolicy: Always
     inputs:
       parameters:
-      - {name: workspace_pvc_name}
+      - {name: volume-creation-name}
     metadata:
       labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
       annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
@@ -63,8 +63,8 @@ spec:
           "name": "Clear workspace op"}', pipelines.kubeflow.org/component_ref: '{}',
         pipelines.kubeflow.org/max_cache_staleness: P0D}
     volumes:
-    - name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3
-      persistentVolumeClaim: {claimName: '{{inputs.parameters.workspace_pvc_name}}'}
+    - name: volume-creation
+      persistentVolumeClaim: {claimName: '{{inputs.parameters.volume-creation-name}}'}
   - name: deepfacelab-pipeline
     inputs:
       parameters:
@@ -80,24 +80,13 @@ spec:
       tasks:
       - name: clear-workspace-op
         template: clear-workspace-op
+        dependencies: [volume-creation]
         arguments:
           parameters:
-          - {name: workspace_pvc_name, value: '{{inputs.parameters.workspace_pvc_name}}'}
-      - name: download-pretrained-data-op
-        template: download-pretrained-data-op
-        dependencies: [clear-workspace-op]
-        arguments:
-          parameters:
-          - {name: workspace_pvc_name, value: '{{inputs.parameters.workspace_pvc_name}}'}
-      - name: download-pretrained-model-op
-        template: download-pretrained-model-op
-        dependencies: [clear-workspace-op]
-        arguments:
-          parameters:
-          - {name: workspace_pvc_name, value: '{{inputs.parameters.workspace_pvc_name}}'}
+          - {name: volume-creation-name, value: '{{tasks.volume-creation.outputs.parameters.volume-creation-name}}'}
       - name: download-videos-op
         template: download-videos-op
-        dependencies: [clear-workspace-op]
+        dependencies: [clear-workspace-op, volume-creation]
         arguments:
           parameters:
           - {name: source_duration, value: '{{inputs.parameters.source_duration}}'}
@@ -106,143 +95,55 @@ spec:
           - {name: target_duration, value: '{{inputs.parameters.target_duration}}'}
           - {name: target_start_time, value: '{{inputs.parameters.target_start_time}}'}
           - {name: target_youtube_url, value: '{{inputs.parameters.target_youtube_url}}'}
-          - {name: workspace_pvc_name, value: '{{inputs.parameters.workspace_pvc_name}}'}
+          - {name: volume-creation-name, value: '{{tasks.volume-creation.outputs.parameters.volume-creation-name}}'}
       - name: extract-faces-from-source-op
         template: extract-faces-from-source-op
-        dependencies: [extract-images-from-source-op]
+        dependencies: [extract-images-from-source-op, volume-creation]
         arguments:
           parameters:
-          - {name: workspace_pvc_name, value: '{{inputs.parameters.workspace_pvc_name}}'}
+          - {name: volume-creation-name, value: '{{tasks.volume-creation.outputs.parameters.volume-creation-name}}'}
       - name: extract-faces-from-target-op
         template: extract-faces-from-target-op
-        dependencies: [extract-images-from-target-op]
+        dependencies: [extract-images-from-target-op, volume-creation]
         arguments:
           parameters:
-          - {name: workspace_pvc_name, value: '{{inputs.parameters.workspace_pvc_name}}'}
+          - {name: volume-creation-name, value: '{{tasks.volume-creation.outputs.parameters.volume-creation-name}}'}
       - name: extract-images-from-source-op
         template: extract-images-from-source-op
-        dependencies: [download-videos-op]
+        dependencies: [download-videos-op, volume-creation]
         arguments:
           parameters:
-          - {name: workspace_pvc_name, value: '{{inputs.parameters.workspace_pvc_name}}'}
+          - {name: volume-creation-name, value: '{{tasks.volume-creation.outputs.parameters.volume-creation-name}}'}
       - name: extract-images-from-target-op
         template: extract-images-from-target-op
-        dependencies: [download-videos-op]
+        dependencies: [download-videos-op, volume-creation]
         arguments:
           parameters:
-          - {name: workspace_pvc_name, value: '{{inputs.parameters.workspace_pvc_name}}'}
+          - {name: volume-creation-name, value: '{{tasks.volume-creation.outputs.parameters.volume-creation-name}}'}
       - name: make-video-output-op
         template: make-video-output-op
-        dependencies: [merge-quick96-op]
+        dependencies: [merge-quick96-op, volume-creation]
         arguments:
           parameters:
-          - {name: workspace_pvc_name, value: '{{inputs.parameters.workspace_pvc_name}}'}
+          - {name: volume-creation-name, value: '{{tasks.volume-creation.outputs.parameters.volume-creation-name}}'}
       - name: merge-quick96-op
         template: merge-quick96-op
-        dependencies: [extract-faces-from-target-op, train-quick96-op]
+        dependencies: [extract-faces-from-target-op, train-quick96-op, volume-creation]
         arguments:
           parameters:
-          - {name: workspace_pvc_name, value: '{{inputs.parameters.workspace_pvc_name}}'}
+          - {name: volume-creation-name, value: '{{tasks.volume-creation.outputs.parameters.volume-creation-name}}'}
       - name: train-quick96-op
         template: train-quick96-op
-        dependencies: [download-pretrained-data-op, download-pretrained-model-op,
-          extract-faces-from-source-op]
+        dependencies: [extract-faces-from-source-op, volume-creation]
         arguments:
           parameters:
           - {name: train_timeout, value: '{{inputs.parameters.train_timeout}}'}
+          - {name: volume-creation-name, value: '{{tasks.volume-creation.outputs.parameters.volume-creation-name}}'}
+      - name: volume-creation
+        template: volume-creation
+        arguments:
+          parameters:
           - {name: workspace_pvc_name, value: '{{inputs.parameters.workspace_pvc_name}}'}
-  - name: download-pretrained-data-op
-    container:
-      args: []
-      command:
-      - sh
-      - -ec
-      - |
-        program_path=$(mktemp)
-        printf "%s" "$0" > "$program_path"
-        python3 -u "$program_path" "$@"
-      - "import subprocess\ndef run_commands(commands, collect=False):\n    output\
-        \ = []\n    with subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE,\
-        \ executable=\"/bin/bash\") as process:\n        if process.stdout is not\
-        \ None:\n            for line in process.stdout:\n                print(line.strip())\n\
-        \                if collect:\n                    ouptut.append(line.strip())\n\
-        \    return \"\\n\".join(output)\n    \n\ndef download_pretrained_data_op():\n\
-        \    run_commands(f\"\"\"\n    cd /app/DeepFaceLab_Linux/scripts/;\n    bash\
-        \ 4.1_download_CelebA.sh\n    \"\"\")\n\nimport argparse\n_parser = argparse.ArgumentParser(prog='Download\
-        \ pretrained data op', description='')\n_parsed_args = vars(_parser.parse_args())\n\
-        \n_outputs = download_pretrained_data_op(**_parsed_args)\n"
-      image: ghcr.io/azurelysium/deepfacelab:latest
-      volumeMounts:
-      - {mountPath: /workspace, name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3}
-      imagePullPolicy: Always
-    inputs:
-      parameters:
-      - {name: workspace_pvc_name}
-    metadata:
-      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
-      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
-          {"args": [], "command": ["sh", "-ec", "program_path=$(mktemp)\nprintf \"%s\"
-          \"$0\" > \"$program_path\"\npython3 -u \"$program_path\" \"$@\"\n", "import
-          subprocess\ndef run_commands(commands, collect=False):\n    output = []\n    with
-          subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, executable=\"/bin/bash\")
-          as process:\n        if process.stdout is not None:\n            for line
-          in process.stdout:\n                print(line.strip())\n                if
-          collect:\n                    ouptut.append(line.strip())\n    return \"\\n\".join(output)\n    \n\ndef
-          download_pretrained_data_op():\n    run_commands(f\"\"\"\n    cd /app/DeepFaceLab_Linux/scripts/;\n    bash
-          4.1_download_CelebA.sh\n    \"\"\")\n\nimport argparse\n_parser = argparse.ArgumentParser(prog=''Download
-          pretrained data op'', description='''')\n_parsed_args = vars(_parser.parse_args())\n\n_outputs
-          = download_pretrained_data_op(**_parsed_args)\n"], "image": "ghcr.io/azurelysium/deepfacelab:latest"}},
-          "name": "Download pretrained data op"}', pipelines.kubeflow.org/component_ref: '{}',
-        pipelines.kubeflow.org/max_cache_staleness: P0D}
-    volumes:
-    - name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3
-      persistentVolumeClaim: {claimName: '{{inputs.parameters.workspace_pvc_name}}'}
-  - name: download-pretrained-model-op
-    container:
-      args: []
-      command:
-      - sh
-      - -ec
-      - |
-        program_path=$(mktemp)
-        printf "%s" "$0" > "$program_path"
-        python3 -u "$program_path" "$@"
-      - "import subprocess\ndef run_commands(commands, collect=False):\n    output\
-        \ = []\n    with subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE,\
-        \ executable=\"/bin/bash\") as process:\n        if process.stdout is not\
-        \ None:\n            for line in process.stdout:\n                print(line.strip())\n\
-        \                if collect:\n                    ouptut.append(line.strip())\n\
-        \    return \"\\n\".join(output)\n    \n\ndef download_pretrained_model_op():\n\
-        \    run_commands(f\"\"\"\n    cd /app/DeepFaceLab_Linux/scripts/;\n    bash\
-        \ 4.1_download_Quick96.sh\n    \"\"\")\n\nimport argparse\n_parser = argparse.ArgumentParser(prog='Download\
-        \ pretrained model op', description='')\n_parsed_args = vars(_parser.parse_args())\n\
-        \n_outputs = download_pretrained_model_op(**_parsed_args)\n"
-      image: ghcr.io/azurelysium/deepfacelab:latest
-      volumeMounts:
-      - {mountPath: /workspace, name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3}
-      imagePullPolicy: Always
-    inputs:
-      parameters:
-      - {name: workspace_pvc_name}
-    metadata:
-      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
-      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
-          {"args": [], "command": ["sh", "-ec", "program_path=$(mktemp)\nprintf \"%s\"
-          \"$0\" > \"$program_path\"\npython3 -u \"$program_path\" \"$@\"\n", "import
-          subprocess\ndef run_commands(commands, collect=False):\n    output = []\n    with
-          subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, executable=\"/bin/bash\")
-          as process:\n        if process.stdout is not None:\n            for line
-          in process.stdout:\n                print(line.strip())\n                if
-          collect:\n                    ouptut.append(line.strip())\n    return \"\\n\".join(output)\n    \n\ndef
-          download_pretrained_model_op():\n    run_commands(f\"\"\"\n    cd /app/DeepFaceLab_Linux/scripts/;\n    bash
-          4.1_download_Quick96.sh\n    \"\"\")\n\nimport argparse\n_parser = argparse.ArgumentParser(prog=''Download
-          pretrained model op'', description='''')\n_parsed_args = vars(_parser.parse_args())\n\n_outputs
-          = download_pretrained_model_op(**_parsed_args)\n"], "image": "ghcr.io/azurelysium/deepfacelab:latest"}},
-          "name": "Download pretrained model op"}', pipelines.kubeflow.org/component_ref: '{}',
-        pipelines.kubeflow.org/max_cache_staleness: P0D}
-    volumes:
-    - name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3
-      persistentVolumeClaim: {claimName: '{{inputs.parameters.workspace_pvc_name}}'}
   - name: download-videos-op
     container:
       args: [--source-youtube-url, '{{inputs.parameters.source_youtube_url}}', --source-start-time,
@@ -289,7 +190,7 @@ spec:
         _parsed_args = vars(_parser.parse_args())\n\n_outputs = download_videos_op(**_parsed_args)\n"
       image: ghcr.io/azurelysium/deepfacelab:latest
       volumeMounts:
-      - {mountPath: /workspace, name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3}
+      - {mountPath: /workspace, name: volume-creation}
       imagePullPolicy: Always
     inputs:
       parameters:
@@ -299,7 +200,7 @@ spec:
       - {name: target_duration}
       - {name: target_start_time}
       - {name: target_youtube_url}
-      - {name: workspace_pvc_name}
+      - {name: volume-creation-name}
     metadata:
       labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
       annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
@@ -344,8 +245,8 @@ spec:
           "target_start_time": "{{inputs.parameters.target_start_time}}", "target_youtube_url":
           "{{inputs.parameters.target_youtube_url}}"}', pipelines.kubeflow.org/max_cache_staleness: P0D}
     volumes:
-    - name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3
-      persistentVolumeClaim: {claimName: '{{inputs.parameters.workspace_pvc_name}}'}
+    - name: volume-creation
+      persistentVolumeClaim: {claimName: '{{inputs.parameters.volume-creation-name}}'}
   - name: extract-faces-from-source-op
     container:
       args: []
@@ -377,11 +278,11 @@ spec:
       resources:
         limits: {nvidia.com/gpu: 1}
       volumeMounts:
-      - {mountPath: /workspace, name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3}
+      - {mountPath: /workspace, name: volume-creation}
       imagePullPolicy: Always
     inputs:
       parameters:
-      - {name: workspace_pvc_name}
+      - {name: volume-creation-name}
     metadata:
       labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
       annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
@@ -411,8 +312,8 @@ spec:
           "Extract faces from source op"}', pipelines.kubeflow.org/component_ref: '{}',
         pipelines.kubeflow.org/max_cache_staleness: P0D}
     volumes:
-    - name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3
-      persistentVolumeClaim: {claimName: '{{inputs.parameters.workspace_pvc_name}}'}
+    - name: volume-creation
+      persistentVolumeClaim: {claimName: '{{inputs.parameters.volume-creation-name}}'}
   - name: extract-faces-from-target-op
     container:
       args: []
@@ -444,11 +345,11 @@ spec:
       resources:
         limits: {nvidia.com/gpu: 1}
       volumeMounts:
-      - {mountPath: /workspace, name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3}
+      - {mountPath: /workspace, name: volume-creation}
       imagePullPolicy: Always
     inputs:
       parameters:
-      - {name: workspace_pvc_name}
+      - {name: volume-creation-name}
     metadata:
       labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
       annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
@@ -478,8 +379,8 @@ spec:
           "Extract faces from target op"}', pipelines.kubeflow.org/component_ref: '{}',
         pipelines.kubeflow.org/max_cache_staleness: P0D}
     volumes:
-    - name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3
-      persistentVolumeClaim: {claimName: '{{inputs.parameters.workspace_pvc_name}}'}
+    - name: volume-creation
+      persistentVolumeClaim: {claimName: '{{inputs.parameters.volume-creation-name}}'}
   - name: extract-images-from-source-op
     container:
       args: []
@@ -505,11 +406,11 @@ spec:
         \ = vars(_parser.parse_args())\n\n_outputs = extract_images_from_source_op(**_parsed_args)\n"
       image: ghcr.io/azurelysium/deepfacelab:latest
       volumeMounts:
-      - {mountPath: /workspace, name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3}
+      - {mountPath: /workspace, name: volume-creation}
       imagePullPolicy: Always
     inputs:
       parameters:
-      - {name: workspace_pvc_name}
+      - {name: volume-creation-name}
     metadata:
       labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
       annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
@@ -532,8 +433,8 @@ spec:
           "1", "name": "fps", "optional": true, "type": "Integer"}], "name": "Extract
           images from source op"}', pipelines.kubeflow.org/component_ref: '{}', pipelines.kubeflow.org/max_cache_staleness: P0D}
     volumes:
-    - name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3
-      persistentVolumeClaim: {claimName: '{{inputs.parameters.workspace_pvc_name}}'}
+    - name: volume-creation
+      persistentVolumeClaim: {claimName: '{{inputs.parameters.volume-creation-name}}'}
   - name: extract-images-from-target-op
     container:
       args: []
@@ -558,11 +459,11 @@ spec:
         \n_outputs = extract_images_from_target_op(**_parsed_args)\n"
       image: ghcr.io/azurelysium/deepfacelab:latest
       volumeMounts:
-      - {mountPath: /workspace, name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3}
+      - {mountPath: /workspace, name: volume-creation}
       imagePullPolicy: Always
     inputs:
       parameters:
-      - {name: workspace_pvc_name}
+      - {name: volume-creation-name}
     metadata:
       labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
       annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
@@ -582,11 +483,11 @@ spec:
           "name": "Extract images from target op"}', pipelines.kubeflow.org/component_ref: '{}',
         pipelines.kubeflow.org/max_cache_staleness: P0D}
     volumes:
-    - name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3
-      persistentVolumeClaim: {claimName: '{{inputs.parameters.workspace_pvc_name}}'}
+    - name: volume-creation
+      persistentVolumeClaim: {claimName: '{{inputs.parameters.volume-creation-name}}'}
   - name: make-video-output-op
     container:
-      args: []
+      args: [--video, /tmp/outputs/video/data]
       command:
       - sh
       - -ec
@@ -594,44 +495,56 @@ spec:
         program_path=$(mktemp)
         printf "%s" "$0" > "$program_path"
         python3 -u "$program_path" "$@"
-      - "import subprocess\ndef run_commands(commands, collect=False):\n    output\
+      - "def _make_parent_dirs_and_return_path(file_path: str):\n    import os\n \
+        \   os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return file_path\n\
+        \nimport subprocess\ndef run_commands(commands, collect=False):\n    output\
         \ = []\n    with subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE,\
         \ executable=\"/bin/bash\") as process:\n        if process.stdout is not\
         \ None:\n            for line in process.stdout:\n                print(line.strip())\n\
         \                if collect:\n                    ouptut.append(line.strip())\n\
-        \    return \"\\n\".join(output)\n    \n\ndef make_video_output_op(\n):\n\
-        \    run_commands(f\"\"\"\n    source /opt/conda/etc/profile.d/conda.sh;\n\
+        \    return \"\\n\".join(output)\n    \n\ndef make_video_output_op(\n    video_path,\n\
+        ):\n    run_commands(f\"\"\"\n    source /opt/conda/etc/profile.d/conda.sh;\n\
         \    conda activate deepfacelab;\n    cd /app/DeepFaceLab_Linux/scripts/;\n\
-        \    bash 8_merged_to_mp4_lossless.sh\n    \"\"\")\n\nimport argparse\n_parser\
-        \ = argparse.ArgumentParser(prog='Make video output op', description='')\n\
+        \    bash 8_merged_to_mp4_lossless.sh\n    cp /workspace/result.mp4 {video_path}\n\
+        \    \"\"\")\n\nimport argparse\n_parser = argparse.ArgumentParser(prog='Make\
+        \ video output op', description='')\n_parser.add_argument(\"--video\", dest=\"\
+        video_path\", type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)\n\
         _parsed_args = vars(_parser.parse_args())\n\n_outputs = make_video_output_op(**_parsed_args)\n"
       image: ghcr.io/azurelysium/deepfacelab:latest
       volumeMounts:
-      - {mountPath: /workspace, name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3}
+      - {mountPath: /workspace, name: volume-creation}
       imagePullPolicy: Always
     inputs:
       parameters:
-      - {name: workspace_pvc_name}
+      - {name: volume-creation-name}
+    outputs:
+      artifacts:
+      - {name: make-video-output-op-video, path: /tmp/outputs/video/data}
     metadata:
       labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
       annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
-          {"args": [], "command": ["sh", "-ec", "program_path=$(mktemp)\nprintf \"%s\"
-          \"$0\" > \"$program_path\"\npython3 -u \"$program_path\" \"$@\"\n", "import
-          subprocess\ndef run_commands(commands, collect=False):\n    output = []\n    with
-          subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, executable=\"/bin/bash\")
-          as process:\n        if process.stdout is not None:\n            for line
-          in process.stdout:\n                print(line.strip())\n                if
+          {"args": ["--video", {"outputPath": "video"}], "command": ["sh", "-ec",
+          "program_path=$(mktemp)\nprintf \"%s\" \"$0\" > \"$program_path\"\npython3
+          -u \"$program_path\" \"$@\"\n", "def _make_parent_dirs_and_return_path(file_path:
+          str):\n    import os\n    os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return
+          file_path\n\nimport subprocess\ndef run_commands(commands, collect=False):\n    output
+          = []\n    with subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE,
+          executable=\"/bin/bash\") as process:\n        if process.stdout is not
+          None:\n            for line in process.stdout:\n                print(line.strip())\n                if
           collect:\n                    ouptut.append(line.strip())\n    return \"\\n\".join(output)\n    \n\ndef
-          make_video_output_op(\n):\n    run_commands(f\"\"\"\n    source /opt/conda/etc/profile.d/conda.sh;\n    conda
-          activate deepfacelab;\n    cd /app/DeepFaceLab_Linux/scripts/;\n    bash
-          8_merged_to_mp4_lossless.sh\n    \"\"\")\n\nimport argparse\n_parser = argparse.ArgumentParser(prog=''Make
-          video output op'', description='''')\n_parsed_args = vars(_parser.parse_args())\n\n_outputs
+          make_video_output_op(\n    video_path,\n):\n    run_commands(f\"\"\"\n    source
+          /opt/conda/etc/profile.d/conda.sh;\n    conda activate deepfacelab;\n    cd
+          /app/DeepFaceLab_Linux/scripts/;\n    bash 8_merged_to_mp4_lossless.sh\n    cp
+          /workspace/result.mp4 {video_path}\n    \"\"\")\n\nimport argparse\n_parser
+          = argparse.ArgumentParser(prog=''Make video output op'', description='''')\n_parser.add_argument(\"--video\",
+          dest=\"video_path\", type=_make_parent_dirs_and_return_path, required=True,
+          default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\n_outputs
           = make_video_output_op(**_parsed_args)\n"], "image": "ghcr.io/azurelysium/deepfacelab:latest"}},
-          "name": "Make video output op"}', pipelines.kubeflow.org/component_ref: '{}',
-        pipelines.kubeflow.org/max_cache_staleness: P0D}
+          "name": "Make video output op", "outputs": [{"name": "video", "type": "mp4"}]}',
+        pipelines.kubeflow.org/component_ref: '{}', pipelines.kubeflow.org/max_cache_staleness: P0D}
     volumes:
-    - name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3
-      persistentVolumeClaim: {claimName: '{{inputs.parameters.workspace_pvc_name}}'}
+    - name: volume-creation
+      persistentVolumeClaim: {claimName: '{{inputs.parameters.volume-creation-name}}'}
   - name: merge-quick96-op
     container:
       args: []
@@ -657,11 +570,11 @@ spec:
       resources:
         limits: {nvidia.com/gpu: 1}
       volumeMounts:
-      - {mountPath: /workspace, name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3}
+      - {mountPath: /workspace, name: volume-creation}
       imagePullPolicy: Always
     inputs:
       parameters:
-      - {name: workspace_pvc_name}
+      - {name: volume-creation-name}
     metadata:
       labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
       annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
@@ -680,8 +593,8 @@ spec:
           "image": "ghcr.io/azurelysium/deepfacelab:latest"}}, "name": "Merge quick96
           op"}', pipelines.kubeflow.org/component_ref: '{}', pipelines.kubeflow.org/max_cache_staleness: P0D}
     volumes:
-    - name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3
-      persistentVolumeClaim: {claimName: '{{inputs.parameters.workspace_pvc_name}}'}
+    - name: volume-creation
+      persistentVolumeClaim: {claimName: '{{inputs.parameters.volume-creation-name}}'}
   - name: train-quick96-op
     container:
       args: [--timeout, '{{inputs.parameters.train_timeout}}']
@@ -710,12 +623,12 @@ spec:
       resources:
         limits: {nvidia.com/gpu: 1}
       volumeMounts:
-      - {mountPath: /workspace, name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3}
+      - {mountPath: /workspace, name: volume-creation}
       imagePullPolicy: Always
     inputs:
       parameters:
       - {name: train_timeout}
-      - {name: workspace_pvc_name}
+      - {name: volume-creation-name}
     metadata:
       labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
       annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
@@ -740,8 +653,35 @@ spec:
         pipelines.kubeflow.org/arguments.parameters: '{"timeout": "{{inputs.parameters.train_timeout}}"}',
         pipelines.kubeflow.org/max_cache_staleness: P0D}
     volumes:
-    - name: pvolume-380f0f65ccb6ae5f420ca1e4f383598f24207315f17bf77f050d2f3
-      persistentVolumeClaim: {claimName: '{{inputs.parameters.workspace_pvc_name}}'}
+    - name: volume-creation
+      persistentVolumeClaim: {claimName: '{{inputs.parameters.volume-creation-name}}'}
+  - name: volume-creation
+    resource:
+      action: create
+      manifest: |
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+          name: '{{workflow.name}}-{{inputs.parameters.workspace_pvc_name}}'
+        spec:
+          accessModes:
+          - ReadWriteMany
+          resources:
+            requests:
+              storage: 16Gi
+    inputs:
+      parameters:
+      - {name: workspace_pvc_name}
+    outputs:
+      parameters:
+      - name: volume-creation-manifest
+        valueFrom: {jsonPath: '{}'}
+      - name: volume-creation-name
+        valueFrom: {jsonPath: '{.metadata.name}'}
+      - name: volume-creation-size
+        valueFrom: {jsonPath: '{.status.capacity.storage}'}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
   arguments:
     parameters:
     - {name: source_youtube_url, value: 'https://www.youtube.com/watch?v=hZNL2j_YJyM'}
