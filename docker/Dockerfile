@@ -41,3 +41,4 @@ RUN cd /app/DeepFaceLab_Linux/scripts && \
 
 COPY env.sh /app/DeepFaceLab_Linux/scripts/env.sh
 COPY Merger.py /app/DeepFaceLab_Linux/DeepFaceLab/mainscripts/Merger.py
+COPY MergerConfig.py /app/DeepFaceLab_Linux/DeepFaceLab/merger/MergerConfig.py

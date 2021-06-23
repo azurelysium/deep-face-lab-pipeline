@@ -2,16 +2,17 @@ apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
   generateName: deepfacelab-pipeline-
-  annotations: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline_compilation_time: '2021-06-23T08:47:03.886993',
+  annotations: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline_compilation_time: '2021-06-23T12:16:55.538346',
     pipelines.kubeflow.org/pipeline_spec: '{"inputs": [{"default": "https://www.youtube.com/watch?v=hZNL2j_YJyM",
       "name": "source_youtube_url", "optional": true, "type": "String"}, {"default":
-      "00:00:30.00", "name": "source_start_time", "optional": true, "type": "String"},
+      "00:01:00.00", "name": "source_start_time", "optional": true, "type": "String"},
       {"default": "00:05:00.00", "name": "source_duration", "optional": true, "type":
-      "String"}, {"default": "https://www.youtube.com/watch?v=-Op3ct7NmlA", "name":
-      "target_youtube_url", "optional": true, "type": "String"}, {"default": "00:00:10.00",
+      "String"}, {"default": "https://www.youtube.com/watch?v=0CvTUV8cNzU", "name":
+      "target_youtube_url", "optional": true, "type": "String"}, {"default": "00:00:30.00",
       "name": "target_start_time", "optional": true, "type": "String"}, {"default":
-      "00:00:20.00", "name": "target_duration", "optional": true, "type": "String"},
+      "00:00:25.00", "name": "target_duration", "optional": true, "type": "String"},
       {"default": "10m", "name": "train_timeout", "optional": true, "type": "String"},
+      {"default": "full_face", "name": "face_type", "optional": true, "type": "String"},
       {"default": "deepfacelab-workspace-pvc", "name": "workspace_pvc_name", "optional":
       true, "type": "String"}], "name": "DeepFaceLab Pipeline"}'}
   labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2}
@@ -68,6 +69,7 @@ spec:
   - name: deepfacelab-pipeline
     inputs:
       parameters:
+      - {name: face_type}
       - {name: source_duration}
       - {name: source_start_time}
       - {name: source_youtube_url}
@@ -101,12 +103,14 @@ spec:
         dependencies: [extract-images-from-source-op, volume-creation]
         arguments:
           parameters:
+          - {name: face_type, value: '{{inputs.parameters.face_type}}'}
           - {name: volume-creation-name, value: '{{tasks.volume-creation.outputs.parameters.volume-creation-name}}'}
       - name: extract-faces-from-target-op
         template: extract-faces-from-target-op
         dependencies: [extract-images-from-target-op, volume-creation]
         arguments:
           parameters:
+          - {name: face_type, value: '{{inputs.parameters.face_type}}'}
           - {name: volume-creation-name, value: '{{tasks.volume-creation.outputs.parameters.volume-creation-name}}'}
       - name: extract-images-from-source-op
         template: extract-images-from-source-op
@@ -249,7 +253,7 @@ spec:
       persistentVolumeClaim: {claimName: '{{inputs.parameters.volume-creation-name}}'}
   - name: extract-faces-from-source-op
     container:
-      args: []
+      args: [--face-type, '{{inputs.parameters.face_type}}']
       command:
       - sh
       - -ec
@@ -263,13 +267,15 @@ spec:
         \ None:\n            for line in process.stdout:\n                print(line.strip())\n\
         \                if collect:\n                    ouptut.append(line.strip())\n\
         \    return \"\\n\".join(output)\n    \n\ndef extract_faces_from_source_op(\n\
-        \        image_size = 512,\n        jpeg_quality = 100,\n):\n    run_commands(f\"\
-        \"\"\n    source /opt/conda/etc/profile.d/conda.sh;\n    conda activate deepfacelab;\n\
-        \    cd /app/DeepFaceLab_Linux/scripts/;\n    bash 4_data_src_extract_faces_S3FD.sh\
-        \ \\\n         --output-debug \\\n         --face-type whole_face \\\n   \
-        \      --max-faces-from-image 1 \\\n         --image-size {image_size} \\\n\
-        \         --jpeg-quality {jpeg_quality} \\\n    \"\"\")\n\nimport argparse\n\
-        _parser = argparse.ArgumentParser(prog='Extract faces from source op', description='')\n\
+        \        face_type = \"full_face\",\n        image_size = 512,\n        jpeg_quality\
+        \ = 100,\n):\n    run_commands(f\"\"\"\n    source /opt/conda/etc/profile.d/conda.sh;\n\
+        \    conda activate deepfacelab;\n    cd /app/DeepFaceLab_Linux/scripts/;\n\
+        \    bash 4_data_src_extract_faces_S3FD.sh \\\n         --output-debug \\\n\
+        \         --face-type {face_type} \\\n         --max-faces-from-image 1 \\\
+        \n         --image-size {image_size} \\\n         --jpeg-quality {jpeg_quality}\
+        \ \\\n    \"\"\")\n\nimport argparse\n_parser = argparse.ArgumentParser(prog='Extract\
+        \ faces from source op', description='')\n_parser.add_argument(\"--face-type\"\
+        , dest=\"face_type\", type=str, required=False, default=argparse.SUPPRESS)\n\
         _parser.add_argument(\"--image-size\", dest=\"image_size\", type=int, required=False,\
         \ default=argparse.SUPPRESS)\n_parser.add_argument(\"--jpeg-quality\", dest=\"\
         jpeg_quality\", type=int, required=False, default=argparse.SUPPRESS)\n_parsed_args\
@@ -282,41 +288,47 @@ spec:
       imagePullPolicy: Always
     inputs:
       parameters:
+      - {name: face_type}
       - {name: volume-creation-name}
     metadata:
       labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
       annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
-          {"args": [{"if": {"cond": {"isPresent": "image_size"}, "then": ["--image-size",
-          {"inputValue": "image_size"}]}}, {"if": {"cond": {"isPresent": "jpeg_quality"},
-          "then": ["--jpeg-quality", {"inputValue": "jpeg_quality"}]}}], "command":
-          ["sh", "-ec", "program_path=$(mktemp)\nprintf \"%s\" \"$0\" > \"$program_path\"\npython3
-          -u \"$program_path\" \"$@\"\n", "import subprocess\ndef run_commands(commands,
-          collect=False):\n    output = []\n    with subprocess.Popen(commands, shell=True,
-          stdout=subprocess.PIPE, executable=\"/bin/bash\") as process:\n        if
-          process.stdout is not None:\n            for line in process.stdout:\n                print(line.strip())\n                if
+          {"args": [{"if": {"cond": {"isPresent": "face_type"}, "then": ["--face-type",
+          {"inputValue": "face_type"}]}}, {"if": {"cond": {"isPresent": "image_size"},
+          "then": ["--image-size", {"inputValue": "image_size"}]}}, {"if": {"cond":
+          {"isPresent": "jpeg_quality"}, "then": ["--jpeg-quality", {"inputValue":
+          "jpeg_quality"}]}}], "command": ["sh", "-ec", "program_path=$(mktemp)\nprintf
+          \"%s\" \"$0\" > \"$program_path\"\npython3 -u \"$program_path\" \"$@\"\n",
+          "import subprocess\ndef run_commands(commands, collect=False):\n    output
+          = []\n    with subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE,
+          executable=\"/bin/bash\") as process:\n        if process.stdout is not
+          None:\n            for line in process.stdout:\n                print(line.strip())\n                if
           collect:\n                    ouptut.append(line.strip())\n    return \"\\n\".join(output)\n    \n\ndef
-          extract_faces_from_source_op(\n        image_size = 512,\n        jpeg_quality
-          = 100,\n):\n    run_commands(f\"\"\"\n    source /opt/conda/etc/profile.d/conda.sh;\n    conda
-          activate deepfacelab;\n    cd /app/DeepFaceLab_Linux/scripts/;\n    bash
-          4_data_src_extract_faces_S3FD.sh \\\n         --output-debug \\\n         --face-type
-          whole_face \\\n         --max-faces-from-image 1 \\\n         --image-size
-          {image_size} \\\n         --jpeg-quality {jpeg_quality} \\\n    \"\"\")\n\nimport
-          argparse\n_parser = argparse.ArgumentParser(prog=''Extract faces from source
-          op'', description='''')\n_parser.add_argument(\"--image-size\", dest=\"image_size\",
-          type=int, required=False, default=argparse.SUPPRESS)\n_parser.add_argument(\"--jpeg-quality\",
+          extract_faces_from_source_op(\n        face_type = \"full_face\",\n        image_size
+          = 512,\n        jpeg_quality = 100,\n):\n    run_commands(f\"\"\"\n    source
+          /opt/conda/etc/profile.d/conda.sh;\n    conda activate deepfacelab;\n    cd
+          /app/DeepFaceLab_Linux/scripts/;\n    bash 4_data_src_extract_faces_S3FD.sh
+          \\\n         --output-debug \\\n         --face-type {face_type} \\\n         --max-faces-from-image
+          1 \\\n         --image-size {image_size} \\\n         --jpeg-quality {jpeg_quality}
+          \\\n    \"\"\")\n\nimport argparse\n_parser = argparse.ArgumentParser(prog=''Extract
+          faces from source op'', description='''')\n_parser.add_argument(\"--face-type\",
+          dest=\"face_type\", type=str, required=False, default=argparse.SUPPRESS)\n_parser.add_argument(\"--image-size\",
+          dest=\"image_size\", type=int, required=False, default=argparse.SUPPRESS)\n_parser.add_argument(\"--jpeg-quality\",
           dest=\"jpeg_quality\", type=int, required=False, default=argparse.SUPPRESS)\n_parsed_args
           = vars(_parser.parse_args())\n\n_outputs = extract_faces_from_source_op(**_parsed_args)\n"],
           "image": "ghcr.io/azurelysium/deepfacelab:latest"}}, "inputs": [{"default":
+          "full_face", "name": "face_type", "optional": true, "type": "String"}, {"default":
           "512", "name": "image_size", "optional": true, "type": "Integer"}, {"default":
           "100", "name": "jpeg_quality", "optional": true, "type": "Integer"}], "name":
           "Extract faces from source op"}', pipelines.kubeflow.org/component_ref: '{}',
+        pipelines.kubeflow.org/arguments.parameters: '{"face_type": "{{inputs.parameters.face_type}}"}',
         pipelines.kubeflow.org/max_cache_staleness: P0D}
     volumes:
     - name: volume-creation
       persistentVolumeClaim: {claimName: '{{inputs.parameters.volume-creation-name}}'}
   - name: extract-faces-from-target-op
     container:
-      args: []
+      args: [--face-type, '{{inputs.parameters.face_type}}']
       command:
       - sh
       - -ec
@@ -330,13 +342,15 @@ spec:
         \ None:\n            for line in process.stdout:\n                print(line.strip())\n\
         \                if collect:\n                    ouptut.append(line.strip())\n\
         \    return \"\\n\".join(output)\n    \n\ndef extract_faces_from_target_op(\n\
-        \        image_size = 512,\n        jpeg_quality = 100,\n):\n    run_commands(f\"\
-        \"\"\n    source /opt/conda/etc/profile.d/conda.sh;\n    conda activate deepfacelab;\n\
-        \    cd /app/DeepFaceLab_Linux/scripts/;\n    bash 5_data_dst_extract_faces_S3FD.sh\
-        \ \\\n         --output-debug \\\n         --face-type whole_face \\\n   \
-        \      --max-faces-from-image 0 \\\n         --image-size {image_size} \\\n\
-        \         --jpeg-quality {jpeg_quality} \\\n    \"\"\")\n\nimport argparse\n\
-        _parser = argparse.ArgumentParser(prog='Extract faces from target op', description='')\n\
+        \        face_type = \"full_face\",\n        image_size = 512,\n        jpeg_quality\
+        \ = 100,\n):\n    run_commands(f\"\"\"\n    source /opt/conda/etc/profile.d/conda.sh;\n\
+        \    conda activate deepfacelab;\n    cd /app/DeepFaceLab_Linux/scripts/;\n\
+        \    bash 5_data_dst_extract_faces_S3FD.sh \\\n         --output-debug \\\n\
+        \         --face-type {face_type} \\\n         --max-faces-from-image 0 \\\
+        \n         --image-size {image_size} \\\n         --jpeg-quality {jpeg_quality}\
+        \ \\\n    \"\"\")\n\nimport argparse\n_parser = argparse.ArgumentParser(prog='Extract\
+        \ faces from target op', description='')\n_parser.add_argument(\"--face-type\"\
+        , dest=\"face_type\", type=str, required=False, default=argparse.SUPPRESS)\n\
         _parser.add_argument(\"--image-size\", dest=\"image_size\", type=int, required=False,\
         \ default=argparse.SUPPRESS)\n_parser.add_argument(\"--jpeg-quality\", dest=\"\
         jpeg_quality\", type=int, required=False, default=argparse.SUPPRESS)\n_parsed_args\
@@ -349,34 +363,40 @@ spec:
       imagePullPolicy: Always
     inputs:
       parameters:
+      - {name: face_type}
       - {name: volume-creation-name}
     metadata:
       labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.2, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
       annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
-          {"args": [{"if": {"cond": {"isPresent": "image_size"}, "then": ["--image-size",
-          {"inputValue": "image_size"}]}}, {"if": {"cond": {"isPresent": "jpeg_quality"},
-          "then": ["--jpeg-quality", {"inputValue": "jpeg_quality"}]}}], "command":
-          ["sh", "-ec", "program_path=$(mktemp)\nprintf \"%s\" \"$0\" > \"$program_path\"\npython3
-          -u \"$program_path\" \"$@\"\n", "import subprocess\ndef run_commands(commands,
-          collect=False):\n    output = []\n    with subprocess.Popen(commands, shell=True,
-          stdout=subprocess.PIPE, executable=\"/bin/bash\") as process:\n        if
-          process.stdout is not None:\n            for line in process.stdout:\n                print(line.strip())\n                if
+          {"args": [{"if": {"cond": {"isPresent": "face_type"}, "then": ["--face-type",
+          {"inputValue": "face_type"}]}}, {"if": {"cond": {"isPresent": "image_size"},
+          "then": ["--image-size", {"inputValue": "image_size"}]}}, {"if": {"cond":
+          {"isPresent": "jpeg_quality"}, "then": ["--jpeg-quality", {"inputValue":
+          "jpeg_quality"}]}}], "command": ["sh", "-ec", "program_path=$(mktemp)\nprintf
+          \"%s\" \"$0\" > \"$program_path\"\npython3 -u \"$program_path\" \"$@\"\n",
+          "import subprocess\ndef run_commands(commands, collect=False):\n    output
+          = []\n    with subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE,
+          executable=\"/bin/bash\") as process:\n        if process.stdout is not
+          None:\n            for line in process.stdout:\n                print(line.strip())\n                if
           collect:\n                    ouptut.append(line.strip())\n    return \"\\n\".join(output)\n    \n\ndef
-          extract_faces_from_target_op(\n        image_size = 512,\n        jpeg_quality
-          = 100,\n):\n    run_commands(f\"\"\"\n    source /opt/conda/etc/profile.d/conda.sh;\n    conda
-          activate deepfacelab;\n    cd /app/DeepFaceLab_Linux/scripts/;\n    bash
-          5_data_dst_extract_faces_S3FD.sh \\\n         --output-debug \\\n         --face-type
-          whole_face \\\n         --max-faces-from-image 0 \\\n         --image-size
-          {image_size} \\\n         --jpeg-quality {jpeg_quality} \\\n    \"\"\")\n\nimport
-          argparse\n_parser = argparse.ArgumentParser(prog=''Extract faces from target
-          op'', description='''')\n_parser.add_argument(\"--image-size\", dest=\"image_size\",
-          type=int, required=False, default=argparse.SUPPRESS)\n_parser.add_argument(\"--jpeg-quality\",
+          extract_faces_from_target_op(\n        face_type = \"full_face\",\n        image_size
+          = 512,\n        jpeg_quality = 100,\n):\n    run_commands(f\"\"\"\n    source
+          /opt/conda/etc/profile.d/conda.sh;\n    conda activate deepfacelab;\n    cd
+          /app/DeepFaceLab_Linux/scripts/;\n    bash 5_data_dst_extract_faces_S3FD.sh
+          \\\n         --output-debug \\\n         --face-type {face_type} \\\n         --max-faces-from-image
+          0 \\\n         --image-size {image_size} \\\n         --jpeg-quality {jpeg_quality}
+          \\\n    \"\"\")\n\nimport argparse\n_parser = argparse.ArgumentParser(prog=''Extract
+          faces from target op'', description='''')\n_parser.add_argument(\"--face-type\",
+          dest=\"face_type\", type=str, required=False, default=argparse.SUPPRESS)\n_parser.add_argument(\"--image-size\",
+          dest=\"image_size\", type=int, required=False, default=argparse.SUPPRESS)\n_parser.add_argument(\"--jpeg-quality\",
           dest=\"jpeg_quality\", type=int, required=False, default=argparse.SUPPRESS)\n_parsed_args
           = vars(_parser.parse_args())\n\n_outputs = extract_faces_from_target_op(**_parsed_args)\n"],
           "image": "ghcr.io/azurelysium/deepfacelab:latest"}}, "inputs": [{"default":
+          "full_face", "name": "face_type", "optional": true, "type": "String"}, {"default":
           "512", "name": "image_size", "optional": true, "type": "Integer"}, {"default":
           "100", "name": "jpeg_quality", "optional": true, "type": "Integer"}], "name":
           "Extract faces from target op"}', pipelines.kubeflow.org/component_ref: '{}',
+        pipelines.kubeflow.org/arguments.parameters: '{"face_type": "{{inputs.parameters.face_type}}"}',
         pipelines.kubeflow.org/max_cache_staleness: P0D}
     volumes:
     - name: volume-creation
@@ -685,11 +705,12 @@ spec:
   arguments:
     parameters:
     - {name: source_youtube_url, value: 'https://www.youtube.com/watch?v=hZNL2j_YJyM'}
-    - {name: source_start_time, value: '00:00:30.00'}
+    - {name: source_start_time, value: '00:01:00.00'}
     - {name: source_duration, value: '00:05:00.00'}
-    - {name: target_youtube_url, value: 'https://www.youtube.com/watch?v=-Op3ct7NmlA'}
-    - {name: target_start_time, value: '00:00:10.00'}
-    - {name: target_duration, value: '00:00:20.00'}
+    - {name: target_youtube_url, value: 'https://www.youtube.com/watch?v=0CvTUV8cNzU'}
+    - {name: target_start_time, value: '00:00:30.00'}
+    - {name: target_duration, value: '00:00:25.00'}
     - {name: train_timeout, value: 10m}
+    - {name: face_type, value: full_face}
     - {name: workspace_pvc_name, value: deepfacelab-workspace-pvc}
   serviceAccountName: pipeline-runner

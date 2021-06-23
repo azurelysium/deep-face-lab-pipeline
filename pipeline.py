@@ -103,6 +103,7 @@ def extract_images_from_target_op() -> None:
 ## Component: 4.A Extract face images from source
 @dfl_op
 def extract_faces_from_source_op(
+        face_type: str = "full_face",
         image_size: int = 512,
         jpeg_quality: int = 100,
 ) -> None:
@@ -112,7 +113,7 @@ def extract_faces_from_source_op(
     cd /app/DeepFaceLab_Linux/scripts/;
     bash 4_data_src_extract_faces_S3FD.sh \
          --output-debug \
-         --face-type whole_face \
+         --face-type {face_type} \
          --max-faces-from-image 1 \
          --image-size {image_size} \
          --jpeg-quality {jpeg_quality} \
@@ -122,6 +123,7 @@ def extract_faces_from_source_op(
 ## Component: 4.B Extract face images from target
 @dfl_op
 def extract_faces_from_target_op(
+        face_type: str = "full_face",
         image_size: int = 512,
         jpeg_quality: int = 100,
 ) -> None:
@@ -131,7 +133,7 @@ def extract_faces_from_target_op(
     cd /app/DeepFaceLab_Linux/scripts/;
     bash 5_data_dst_extract_faces_S3FD.sh \
          --output-debug \
-         --face-type whole_face \
+         --face-type {face_type} \
          --max-faces-from-image 0 \
          --image-size {image_size} \
          --jpeg-quality {jpeg_quality} \
@@ -184,12 +186,13 @@ def make_video_output_op(
 @dsl.pipeline(name="DeepFaceLab Pipeline")
 def pipeline(
         source_youtube_url: str = "https://www.youtube.com/watch?v=hZNL2j_YJyM",
-        source_start_time: str = "00:00:30.00",
+        source_start_time: str = "00:01:00.00",
         source_duration: str = "00:05:00.00",
-        target_youtube_url: str = "https://www.youtube.com/watch?v=-Op3ct7NmlA",
-        target_start_time: str = "00:00:10.00",
-        target_duration: str = "00:00:20.00",
+        target_youtube_url: str = "https://www.youtube.com/watch?v=0CvTUV8cNzU",
+        target_start_time: str = "00:00:30.00",
+        target_duration: str = "00:00:25.00",
         train_timeout: str = "10m",
+        face_type: str = "full_face",
         workspace_pvc_name: str = "deepfacelab-workspace-pvc",
 ) -> None:
 
@@ -202,6 +205,7 @@ def pipeline(
     download_pretrained_model_task = download_pretrained_model_op().after(clear_workspace_task)
     download_pretrained_data_task = download_pretrained_data_op().after(clear_workspace_task)
     """
+
     download_videos_task = download_videos_op(
         source_youtube_url,
         source_start_time,
@@ -215,8 +219,8 @@ def pipeline(
     extract_images_from_source_task = extract_images_from_source_op().after(download_videos_task)
     extract_images_from_target_task = extract_images_from_target_op().after(download_videos_task)
 
-    extract_faces_from_source_task = extract_faces_from_source_op().after(extract_images_from_source_task).set_gpu_limit(1)
-    extract_faces_from_target_task = extract_faces_from_target_op().after(extract_images_from_target_task).set_gpu_limit(1)
+    extract_faces_from_source_task = extract_faces_from_source_op(face_type).after(extract_images_from_source_task).set_gpu_limit(1)
+    extract_faces_from_target_task = extract_faces_from_target_op(face_type).after(extract_images_from_target_task).set_gpu_limit(1)
 
     train_quick96_task = train_quick96_op(train_timeout).after(
         extract_faces_from_source_task,
